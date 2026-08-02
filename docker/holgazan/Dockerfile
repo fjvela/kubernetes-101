@@ -1,6 +1,6 @@
 # holgazan — pide muchos recursos y no hace nada.
 # Existe para que el VerticalPodAutoscaler tenga algo que corregir.
-FROM python:3.12-alpine
+FROM python:3.14-alpine
 
 RUN addgroup -g 30001 -S tienda && adduser -u 30001 -S -G tienda tienda
 USER 30001
