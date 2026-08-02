@@ -1,0 +1,78 @@
+{{- if .Values.db.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  labels:
+    app: db
+    app.kubernetes.io/name: db
+    {{- include "tienda.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    app: db
+  ports:
+    - port: 5432
+      name: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db
+  labels:
+    app.kubernetes.io/name: db
+    {{- include "tienda.labels" . | nindent 4 }}
+spec:
+  serviceName: db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+        app.kubernetes.io/name: db
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: db
+          image: {{ .Values.db.image }}
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: db-credentials, key: username }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: db-credentials, key: password }
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef: { name: db-credentials, key: database }
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: datos
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\""]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.db.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: datos
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.db.storageClassName }}
+        storageClassName: {{ .Values.db.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.db.storage }}
+{{- end }}

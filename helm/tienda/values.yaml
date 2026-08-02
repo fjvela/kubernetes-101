@@ -1,0 +1,150 @@
+# ─────────────────────────────────────────────────────────── valores globales
+global:
+  # Cambia esto y ya está: afecta a las cuatro imágenes propias.
+  registro: tienda
+  # Prefijo del nombre de la imagen. Vacío = los nombres del libro
+  # (`tienda/web:1.4.2`). Con un registro real ponlo a `tienda-`, que es como
+  # las publica .github/workflows/imagenes.yaml:
+  #   --set global.registro=ghcr.io/TU-USUARIO --set global.prefijo=tienda-
+  prefijo: ""
+  # Namespace donde vive lo que toca el nodo (el agent).
+  namespacePlataforma: plataforma
+
+# El chart crea `plataforma` (donde va el agent, con enforce: privileged), pero
+# NO el Namespace de la tienda: ese es el del release, y Helm lo necesita
+# existiendo ANTES de aplicar nada, así que tiene que crearlo él mismo con
+# --create-namespace. El porqué está en templates/namespaces.yaml.
+#
+# Ponlo a false si prefieres crear los Namespaces por tu cuenta, por ejemplo
+# con k8s/00-namespaces.yaml, que además les pone las etiquetas de PSA.
+crearNamespacePlataforma: true
+
+imagePullSecrets: []
+
+# ────────────────────────────────────────────────────────────────── el frontend
+web:
+  enabled: true
+  replicas: 3
+  image:
+    repository: web
+    tag: "1.4.2"
+    pullPolicy: IfNotPresent
+  service:
+    port: 80
+  config:
+    APP_ENV: production
+    APP_PORT: "8080"
+    LOG_LEVEL: info
+    API_URL: http://api:8080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  pdb:
+    enabled: true
+    minAvailable: 2
+
+# ─────────────────────────────────────────────────────────────────── el backend
+api:
+  enabled: true
+  replicas: 2
+  image:
+    repository: api
+    tag: "2.1.0"
+    pullPolicy: IfNotPresent
+  service:
+    port: 8080
+  arranqueLentoSegundos: "5"
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    cpuObjetivo: 60
+
+# ───────────────────────────────────────────────────────────── la base de datos
+db:
+  enabled: true
+  image: postgres:16-alpine
+  storage: 5Gi
+  storageClassName: ""
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  credenciales:
+    usuario: tienda
+    password: cambiame
+    base: tienda
+
+# ─────────────────────────────────────────────────────────────────── la caché
+cache:
+  enabled: true
+  replicas: 3
+  image: redis:7-alpine
+  # DoNotSchedule reparte de verdad; ScheduleAnyway solo lo intenta.
+  whenUnsatisfiable: ScheduleAnyway
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# ───────────────────────────────────────────────────── el recolector de logs
+agent:
+  enabled: true
+  image: fluent/fluent-bit:3.0
+  resources:
+    requests:
+      cpu: 5m
+      memory: 32Mi
+    limits:
+      cpu: 50m
+      memory: 64Mi
+
+# ───────────────────────────────────────────────────────── piezas laterales
+reports:
+  enabled: true
+  schedule: "0 3 * * *"
+  timeZone: Europe/Madrid
+  image:
+    repository: reports
+    tag: "1.0.3"
+
+holgazan:
+  enabled: true
+  image:
+    repository: holgazan
+    tag: "0.9.0"
+  resources:
+    requests:
+      cpu: "2"
+      memory: 4Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+# ──────────────────────────────────────────────────────────── entrada y reglas
+ingress:
+  enabled: false
+  className: nginx
+  host: tienda.local
+
+politicas:
+  networkPolicies: true
+  resourceQuota: true
+  limitRange: true

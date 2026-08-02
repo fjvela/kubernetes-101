@@ -1,0 +1,22 @@
+# La puerta de entrada, versión Ingress: lo que hay en la mayoría de clústeres hoy.
+# Necesita un Ingress Controller instalado (en kind, ingress-nginx).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  namespace: tienda
+  labels:
+    app.kubernetes.io/part-of: tienda
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: tienda.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 80

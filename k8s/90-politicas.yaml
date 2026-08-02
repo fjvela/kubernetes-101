@@ -1,0 +1,97 @@
+# El presupuesto del Namespace y quién puede hablar con quién.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: compute-resources
+  namespace: tienda
+spec:
+  hard:
+    # La suma real del sistema son 4,2 CPU. 6 deja margen sin dejar la puerta abierta.
+    requests.cpu: "6"
+    requests.memory: "12Gi"
+    limits.cpu: "12"
+    limits.memory: "24Gi"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: object-counts
+  namespace: tienda
+spec:
+  hard:
+    pods: "20"
+    configmaps: "50"
+    secrets: "50"
+    persistentvolumeclaims: "10"
+    services: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-resource-limits
+  namespace: tienda
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 256Mi
+      max:
+        cpu: "4"
+        memory: "8Gi"
+      min:
+        cpu: 10m
+        memory: 32Mi
+---
+# La db solo acepta conexiones de api, backups y reports. web deja de poder
+# tocarla. Los dos últimos orígenes no son decorativos: sin ellos, el Job de
+# copia y el informe nocturno fallarían por red, no por credenciales.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: db-solo-desde-api
+  namespace: tienda
+spec:
+  podSelector:
+    matchLabels:
+      app: db
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api
+        - podSelector:
+            matchLabels:
+              app: backups
+        - podSelector:
+            matchLabels:
+              app: reports
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# La cache solo la usa api.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cache-solo-desde-api
+  namespace: tienda
+spec:
+  podSelector:
+    matchLabels:
+      app: cache
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api
+      ports:
+        - protocol: TCP
+          port: 6379

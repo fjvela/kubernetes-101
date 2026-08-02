@@ -1,0 +1,56 @@
+# La puerta de entrada, versión Gateway API: el estado final del sistema.
+#
+# Requiere las CRD de Gateway API y un controlador que las implemente:
+#   kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml
+# La clase la crea quien opera el clúster, no la aplicación. El `controllerName`
+# tiene que coincidir con el del controlador que hayas instalado; el de abajo es
+# el de NGINX Gateway Fabric. Con Istio sería `istio.io/gateway-controller`.
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: tienda-gateway-class
+spec:
+  controllerName: gateway.nginx.org/nginx-gateway-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gateway
+  namespace: plataforma
+spec:
+  gatewayClassName: tienda-gateway-class
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: tienda
+  namespace: tienda
+spec:
+  parentRefs:
+    - name: gateway
+      namespace: plataforma
+      sectionName: http
+  hostnames:
+    - "tienda.local"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: api
+          port: 8080
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: web
+          port: 80

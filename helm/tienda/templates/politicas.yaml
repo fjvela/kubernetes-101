@@ -1,0 +1,78 @@
+{{- if .Values.politicas.resourceQuota }}
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: compute-resources
+  labels:
+    {{- include "tienda.labels" . | nindent 4 }}
+spec:
+  hard:
+    requests.cpu: "6"
+    requests.memory: "12Gi"
+    limits.cpu: "12"
+    limits.memory: "24Gi"
+{{- end }}
+{{- if .Values.politicas.limitRange }}
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-resource-limits
+  labels:
+    {{- include "tienda.labels" . | nindent 4 }}
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 256Mi
+      max:
+        cpu: "4"
+        memory: "8Gi"
+      min:
+        cpu: 10m
+        memory: 32Mi
+{{- end }}
+{{- if .Values.politicas.networkPolicies }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: db-solo-desde-api
+  labels:
+    {{- include "tienda.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: db
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: api } }
+        - podSelector: { matchLabels: { app: backups } }
+        - podSelector: { matchLabels: { app: reports } }
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cache-solo-desde-api
+  labels:
+    {{- include "tienda.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: cache
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: api } }
+      ports:
+        - protocol: TCP
+          port: 6379
+{{- end }}

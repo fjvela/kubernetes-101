@@ -1,0 +1,98 @@
+{{- if .Values.web.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  labels:
+    app: web
+    app.kubernetes.io/name: web
+    {{- include "tienda.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: {{ .Values.web.service.port }}
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/name: web
+    {{- include "tienda.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.web.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+        app.kubernetes.io/name: web
+      annotations:
+        # Si cambia el ConfigMap, rueda el Deployment. Sin esto, editar la
+        # configuración no reinicia nada y te preguntas por qué no se aplica.
+        checksum/config: {{ toYaml .Values.web.config | sha256sum }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+      containers:
+        - name: web
+          image: {{ include "tienda.imagen" (dict "registro" .Values.global.registro "prefijo" .Values.global.prefijo "repo" .Values.web.image.repository "tag" .Values.web.image.tag) }}
+          imagePullPolicy: {{ .Values.web.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - configMapRef:
+                name: web-config
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: cache-nginx
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}
+      volumes:
+        - name: cache-nginx
+          emptyDir: {}
+{{- if .Values.web.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web-pdb
+  labels:
+    {{- include "tienda.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.web.pdb.minAvailable }}
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      app: web
+{{- end }}
+{{- end }}

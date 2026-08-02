@@ -1,0 +1,43 @@
+# Construye y publica las cuatro imágenes propias en GitHub Container Registry.
+# No hace falta configurar ningún secreto: GITHUB_TOKEN basta.
+name: imágenes
+
+on:
+  push:
+    branches: [main]
+    paths: ["docker/**", ".github/workflows/imagenes.yaml"]
+  workflow_dispatch:
+
+jobs:
+  construir:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - pieza: web
+            version: "1.4.2"
+          - pieza: api
+            version: "2.1.0"
+          - pieza: reports
+            version: "1.0.3"
+          - pieza: holgazan
+            version: "0.9.0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./docker/${{ matrix.pieza }}
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/tienda-${{ matrix.pieza }}:${{ matrix.version }}
+            ghcr.io/${{ github.repository_owner }}/tienda-${{ matrix.pieza }}:latest

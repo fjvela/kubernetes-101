@@ -1,0 +1,29 @@
+{{- if .Values.crearNamespacePlataforma }}
+{{- /*
+  Aquí no se crea el Namespace de la tienda, y no es un olvido: un chart no
+  puede crear el Namespace de su propio release. Helm guarda el Secret del
+  release DENTRO de ese Namespace, y lo hace antes de aplicar ninguna
+  plantilla. Si no existe, la instalación falla sin llegar hasta aquí; y si lo
+  creas tú a mano, Helm se niega a adoptarlo con «invalid ownership metadata».
+  Es la pescadilla que se muerde la cola para la que existe --create-namespace.
+
+  `plataforma` sí lo crea el chart, precisamente porque NO es el del release:
+  ahí vive el agent, que necesita `enforce: privileged` para montar el
+  /var/log del nodo con un hostPath.
+
+  helm.sh/resource-policy: keep evita que un `helm uninstall` se lleve por
+  delante el Namespace entero con lo que haya dentro.
+*/}}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.global.namespacePlataforma }}
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    {{- include "tienda.labels" . | nindent 4 }}
+    # privileged porque el agent monta /var/log del nodo con un hostPath,
+    # y eso baseline no lo permite.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+{{- end }}

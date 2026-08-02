@@ -1,0 +1,41 @@
+# Levanta la tienda entera en Docker, sin Kubernetes.
+# Sirve para comprobar que las imágenes funcionan antes de desplegarlas:
+#
+#   docker compose up --build
+#   curl http://localhost:8080/api/productos
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: tienda
+      POSTGRES_USER: tienda
+      POSTGRES_PASSWORD: cambiame
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tienda"]
+      interval: 5s
+      retries: 10
+
+  cache:
+    image: redis:7-alpine
+
+  api:
+    build: ./api
+    environment:
+      DB_HOST: db
+      CACHE_HOST: cache
+      POSTGRES_USER: tienda
+      PGPASSWORD: cambiame
+      ARRANQUE_LENTO_SEGUNDOS: "2"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build: ./web
+    environment:
+      # El equivalente del ConfigMap `web-config` fuera de Kubernetes.
+      API_URL: http://api:8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      - api

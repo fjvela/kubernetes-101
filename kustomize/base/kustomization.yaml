@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# La base no duplica los manifiestos: reutiliza los de k8s/. Si cambias algo
+# allí, los tres entornos se enteran. Duplicar YAML es cómo empiezan las
+# incoherencias que este libro se ha pasado media revisión persiguiendo.
+resources:
+  - ../../k8s
+
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false

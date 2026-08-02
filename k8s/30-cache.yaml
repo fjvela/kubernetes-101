@@ -1,0 +1,63 @@
+# cache — Redis. Tres réplicas y una regla que obliga a repartirlas.
+apiVersion: v1
+kind: Service
+metadata:
+  name: cache
+  namespace: tienda
+  labels:
+    app: cache
+    app.kubernetes.io/name: cache
+    app.kubernetes.io/part-of: tienda
+spec:
+  selector:
+    app: cache
+  ports:
+    - port: 6379
+      targetPort: redis
+      name: redis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache
+  namespace: tienda
+  labels:
+    app.kubernetes.io/name: cache
+    app.kubernetes.io/part-of: tienda
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: cache
+  template:
+    metadata:
+      labels:
+        app: cache
+        app.kubernetes.io/name: cache
+        app.kubernetes.io/part-of: tienda
+    spec:
+      # Una réplica por nodo. Sin esto, nada impide que las tres caigan juntas.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: cache
+      containers:
+        - name: cache
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+              name: redis
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"

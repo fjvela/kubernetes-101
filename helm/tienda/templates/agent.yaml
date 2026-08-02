@@ -1,0 +1,106 @@
+{{- if .Values.agent.enabled }}
+# El agent vive en otro Namespace: monta el disco del nodo, y eso no lo admite
+# el nivel baseline que protege al Namespace de la aplicación.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agent-sa
+  namespace: {{ .Values.global.namespacePlataforma }}
+  labels:
+    app.kubernetes.io/name: agent
+    {{- include "tienda.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: lector-pods
+  labels:
+    {{- include "tienda.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-lector-pods
+  labels:
+    {{- include "tienda.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: agent-sa
+    namespace: {{ .Values.global.namespacePlataforma }}
+roleRef:
+  kind: Role
+  name: lector-pods
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-config
+  namespace: {{ .Values.global.namespacePlataforma }}
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush        5
+        Log_Level    info
+        HTTP_Server  On
+        HTTP_Listen  0.0.0.0
+        HTTP_Port    2020
+
+    [INPUT]
+        Name              tail
+        Path              /var/log/containers/*.log
+        Tag               kube.*
+        Skip_Long_Lines   On
+
+    [OUTPUT]
+        Name   stdout
+        Match  *
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: agent
+  namespace: {{ .Values.global.namespacePlataforma }}
+  labels:
+    app.kubernetes.io/name: agent
+    {{- include "tienda.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: agent
+  template:
+    metadata:
+      labels:
+        app: agent
+        app.kubernetes.io/name: agent
+    spec:
+      serviceAccountName: agent-sa
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: agent
+          image: {{ .Values.agent.image }}
+          ports:
+            - containerPort: 2020
+              name: metrics
+          volumeMounts:
+            - name: config
+              mountPath: /fluent-bit/etc/fluent-bit.conf
+              subPath: fluent-bit.conf
+            - name: logs-del-nodo
+              mountPath: /var/log
+              readOnly: true
+          resources:
+            {{- toYaml .Values.agent.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: agent-config
+        - name: logs-del-nodo
+          hostPath:
+            path: /var/log
+{{- end }}

@@ -1,0 +1,30 @@
+# Configuración de la tienda: lo que no es secreto y lo que sí.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+  namespace: tienda
+  labels:
+    app.kubernetes.io/name: web
+    app.kubernetes.io/part-of: tienda
+data:
+  APP_ENV: "production"
+  APP_PORT: "8080"
+  LOG_LEVEL: "info"
+  API_URL: "http://api:8080"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+  namespace: tienda
+  labels:
+    app.kubernetes.io/part-of: tienda
+type: Opaque
+stringData:
+  # En un clúster de verdad esto no se escribe en un fichero: se genera con
+  # un gestor de secretos (Vault, External Secrets, SOPS...). Aquí es un
+  # ejemplo para que el despliegue funcione al primer intento.
+  username: tienda
+  password: cambiame
+  database: tienda

@@ -1,0 +1,46 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Desarrollo: lo mínimo para que funcione en un portátil.
+resources:
+  - ../../base
+
+replicas:
+  - name: web
+    count: 1
+  - name: api
+    count: 1
+  - name: cache
+    count: 1
+
+# Los tags son los que produce ./docker/build.sh. Si publicas las imágenes en
+# un registro propio, cámbialos aquí con `images:` y newName.
+
+patches:
+  # Sin esto, el `replicas: 1` de arriba no sirve de nada: el HPA declara
+  # minReplicas: 2 y sube la api en el primer ciclo de control.
+  - patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3
+    target:
+      kind: HorizontalPodAutoscaler
+      name: api-hpa
+  # En dev no queremos un Pod pidiendo 2 CPU y 4 GiB para no hacer nada.
+  - path: holgazan-recursos.yaml
+    target:
+      kind: Deployment
+      name: holgazan
+  # Ni esperar cinco segundos a que arranque la API.
+  - patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: ARRANQUE_LENTO_SEGUNDOS
+          value: "0"
+    target:
+      kind: Deployment
+      name: api

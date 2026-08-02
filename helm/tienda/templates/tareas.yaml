@@ -1,0 +1,75 @@
+{{- if .Values.reports.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: reports
+  labels:
+    app: reports
+    {{- include "tienda.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.reports.schedule | quote }}
+  timeZone: {{ .Values.reports.timeZone | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 300
+      template:
+        metadata:
+          labels:
+            app: reports
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 30001
+          containers:
+            - name: reports
+              image: {{ include "tienda.imagen" (dict "registro" .Values.global.registro "prefijo" .Values.global.prefijo "repo" .Values.reports.image.repository "tag" .Values.reports.image.tag) }}
+              args: ["--host", "db", "--salida", "/informes/ventas.csv"]
+              env:
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef: { name: db-credentials, key: username }
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef: { name: db-credentials, key: password }
+                - name: DB_NAME
+                  valueFrom:
+                    secretKeyRef: { name: db-credentials, key: database }
+              volumeMounts:
+                - name: informes
+                  mountPath: /informes
+          volumes:
+            - name: informes
+              emptyDir: {}
+{{- end }}
+{{- if .Values.holgazan.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: holgazan
+  labels:
+    app.kubernetes.io/name: holgazan
+    {{- include "tienda.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: holgazan
+  template:
+    metadata:
+      labels:
+        app: holgazan
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 30001
+      containers:
+        - name: holgazan
+          image: {{ include "tienda.imagen" (dict "registro" .Values.global.registro "prefijo" .Values.global.prefijo "repo" .Values.holgazan.image.repository "tag" .Values.holgazan.image.tag) }}
+          resources:
+            {{- toYaml .Values.holgazan.resources | nindent 12 }}
+{{- end }}

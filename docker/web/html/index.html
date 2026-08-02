@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>La tienda — Kubernetes 101</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, sans-serif; max-width: 46rem; margin: 3rem auto;
+           padding: 0 1.5rem; line-height: 1.6; }
+    h1 { margin-bottom: .2rem; }
+    p.sub { margin-top: 0; opacity: .7; }
+    button { font: inherit; padding: .5rem 1rem; cursor: pointer; margin-right: .5rem; }
+    pre { background: #8881; padding: 1rem; border-radius: .4rem; overflow-x: auto; }
+    .pieza { display: inline-block; padding: .15rem .5rem; border: 1px solid #8886;
+             border-radius: .3rem; margin: .15rem .2rem .15rem 0; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <h1>La tienda</h1>
+  <p class="sub">El sistema del libro <em>Kubernetes 101</em>, funcionando de verdad.</p>
+
+  <p>
+    <span class="pieza">web</span><span class="pieza">api</span><span class="pieza">db</span>
+    <span class="pieza">cache</span><span class="pieza">agent</span><span class="pieza">gateway</span>
+  </p>
+
+  <p>Esta página la sirve <code>web</code>. Los botones llaman a <code>api</code>,
+     que a su vez consulta <code>db</code> y <code>cache</code>.</p>
+
+  <p>
+    <button onclick="pedir('/api/productos')">Productos</button>
+    <button onclick="pedir('/api/visitas')">Visitas</button>
+    <button onclick="pedir('/api/')">Quién responde</button>
+  </p>
+
+  <pre id="salida">Pulsa un botón.</pre>
+
+  <script>
+    async function pedir(ruta) {
+      const salida = document.getElementById('salida');
+      salida.textContent = 'Consultando ' + ruta + '…';
+      try {
+        const r = await fetch(ruta);
+        salida.textContent = 'HTTP ' + r.status + '\n\n' + await r.text();
+      } catch (e) {
+        salida.textContent = 'Error: ' + e.message;
+      }
+    }
+  </script>
+</body>
+</html>

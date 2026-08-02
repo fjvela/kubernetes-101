@@ -1,0 +1,101 @@
+# web — el frontend. Tres réplicas intercambiables y un presupuesto de disrupción.
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: tienda
+  labels:
+    app: web
+    app.kubernetes.io/name: web
+    app.kubernetes.io/part-of: tienda
+spec:
+  type: ClusterIP
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: tienda
+  labels:
+    app.kubernetes.io/name: web
+    app.kubernetes.io/part-of: tienda
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+        app.kubernetes.io/name: web
+        app.kubernetes.io/part-of: tienda
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+      containers:
+        - name: web
+          image: tienda/web:1.4.2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - configMapRef:
+                name: web-config
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: cache-nginx
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: cache-nginx
+          emptyDir: {}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web-pdb
+  namespace: tienda
+spec:
+  minAvailable: 2
+  # AlwaysAllow: si un Pod no está Ready, no cuenta como disponible y se puede
+  # desalojar aunque el presupuesto esté al límite. Con IfHealthyBudget, tres
+  # réplicas rotas bloquearían un drenado para siempre.
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      app: web

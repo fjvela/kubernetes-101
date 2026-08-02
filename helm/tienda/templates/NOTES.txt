@@ -1,0 +1,21 @@
+La tienda está desplegada en el Namespace {{ .Release.Namespace }}.
+
+Comprueba que las piezas están en pie:
+
+  kubectl get all -n {{ .Release.Namespace }}
+  kubectl get pods -n {{ .Release.Namespace }} -o wide
+
+Abre la tienda en el navegador:
+
+  kubectl port-forward -n {{ .Release.Namespace }} svc/web 8080:{{ .Values.web.service.port }}
+  # y entra en http://localhost:8080
+
+Pregunta a la api quién le está respondiendo:
+
+  kubectl run curl --rm -it --image=curlimages/curl:8.10.1 --restart=Never \
+    -n {{ .Release.Namespace }} -- curl -s http://api:{{ .Values.api.service.port }}/api/productos
+{{- if not .Values.ingress.enabled }}
+
+El Ingress está desactivado. Si tienes un Ingress Controller, actívalo con
+--set ingress.enabled=true.
+{{- end }}

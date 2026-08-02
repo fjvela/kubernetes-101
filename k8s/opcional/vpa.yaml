@@ -1,0 +1,24 @@
+# Escalado vertical del holgazán. Requiere el controlador de VPA instalado:
+#   https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: holgazan-vpa
+  namespace: tienda
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: holgazan
+  updatePolicy:
+    updateMode: "Off"        # empieza solo recomendando: mira antes de tocar
+  resourcePolicy:
+    containerPolicies:
+      - containerName: "*"
+        minAllowed:
+          cpu: 50m
+          memory: 64Mi
+        maxAllowed:
+          cpu: 2
+          memory: 4Gi
+        controlledResources: ["cpu", "memory"]

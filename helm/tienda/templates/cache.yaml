@@ -1,0 +1,55 @@
+{{- if .Values.cache.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: cache
+  labels:
+    app: cache
+    app.kubernetes.io/name: cache
+    {{- include "tienda.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: cache
+  ports:
+    - port: 6379
+      targetPort: redis
+      name: redis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache
+  labels:
+    app.kubernetes.io/name: cache
+    {{- include "tienda.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.cache.replicas }}
+  selector:
+    matchLabels:
+      app: cache
+  template:
+    metadata:
+      labels:
+        app: cache
+        app.kubernetes.io/name: cache
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: {{ .Values.cache.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              app: cache
+      containers:
+        - name: cache
+          image: {{ .Values.cache.image }}
+          ports:
+            - containerPort: 6379
+              name: redis
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.cache.resources | nindent 12 }}
+{{- end }}

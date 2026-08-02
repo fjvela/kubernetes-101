@@ -1,0 +1,39 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Producción: el sistema del libro, con las políticas puestas.
+resources:
+  - ../../base
+
+replicas:
+  - name: web
+    count: 3
+  - name: api
+    count: 2
+  - name: cache
+    count: 3
+
+# Cambia el registro aquí y en ningún otro sitio más.
+images:
+  - name: tienda/web
+    newName: ghcr.io/TU-USUARIO/tienda-web
+    newTag: 1.4.2
+  - name: tienda/api
+    newName: ghcr.io/TU-USUARIO/tienda-api
+    newTag: 2.1.0
+  - name: tienda/reports
+    newName: ghcr.io/TU-USUARIO/tienda-reports
+    newTag: 1.0.3
+  - name: tienda/holgazan
+    newName: ghcr.io/TU-USUARIO/tienda-holgazan
+    newTag: 0.9.0
+
+patches:
+  # En producción el reparto de la cache deja de ser una sugerencia.
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/topologySpreadConstraints/0/whenUnsatisfiable
+        value: DoNotSchedule
+    target:
+      kind: Deployment
+      name: cache

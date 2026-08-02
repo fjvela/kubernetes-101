@@ -1,0 +1,32 @@
+# Los tres Namespaces del sistema. Nada del libro vive fuera de aquí.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tienda
+  labels:
+    proyecto: tienda
+    pod-security.kubernetes.io/enforce: baseline
+    # enforce y warn a propósito con niveles distintos: `baseline` es lo que se
+    # obliga a cumplir hoy, y `restricted` avisa de lo que faltaría para llegar
+    # al nivel bueno. Ponerlos iguales no aporta nada.
+    pod-security.kubernetes.io/warn: restricted
+---
+# `plataforma` acepta lo que toca el nodo o deja entrar tráfico: el agent y el gateway.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: plataforma
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+---
+# `observabilidad` queda reservado para Prometheus, Grafana y Loki, que este
+# repositorio no despliega. Se etiqueta igualmente: un Namespace sin etiquetas
+# de PSA hereda `privileged` en silencio, y un Namespace vacío de hoy es el
+# Namespace descuidado de mañana.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observabilidad
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted

@@ -1,0 +1,4 @@
+# `k8s/Kustomization` no lleva extensión a propósito (el porqué está dentro del
+# fichero). Sin esto, GitHub lo enseña como texto plano y el editor tampoco lo
+# colorea.
+Kustomization linguist-language=YAML

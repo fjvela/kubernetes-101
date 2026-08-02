@@ -1,0 +1,99 @@
+# db — PostgreSQL. La única pieza que no puede perder su disco ni su nombre.
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: tienda
+  labels:
+    app: db
+    app.kubernetes.io/name: db
+    app.kubernetes.io/part-of: tienda
+spec:
+  clusterIP: None          # headless: cada réplica es direccionable por su nombre
+  selector:
+    app: db
+  ports:
+    - port: 5432
+      name: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db
+  namespace: tienda
+  labels:
+    app.kubernetes.io/name: db
+    app.kubernetes.io/part-of: tienda
+spec:
+  serviceName: db
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+        app.kubernetes.io/name: db
+        app.kubernetes.io/part-of: tienda
+    spec:
+      securityContext:
+        fsGroup: 999           # el GID del usuario postgres dentro de la imagen
+      containers:
+        - name: db
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: password
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: database
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: datos
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              # El usuario sale del Secret, no escrito a mano: si cambias
+              # `username`, la probe sigue funcionando.
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\""]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: postgres
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:            # requests == limits -> QoS Guaranteed
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+  volumeClaimTemplates:
+    - metadata:
+        name: datos
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain

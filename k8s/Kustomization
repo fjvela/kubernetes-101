@@ -1,0 +1,32 @@
+# Permite aplicar todo el directorio de una vez:  kubectl apply -k k8s/
+# Y sirve de base para los overlays de kustomize/, que apuntan aquí con
+# `resources: - ../../k8s`.
+#
+# Y sí, este fichero no tiene extensión a propósito. Kustomize acepta tres
+# nombres —`kustomization.yaml`, `kustomization.yml` y `Kustomization`— y
+# `kubectl -f` sobre un directorio solo lee `.yaml`, `.yml` y `.json`. Si esto
+# se llamara `kustomization.yaml`, `kubectl apply -f k8s/` lo recogería como un
+# manifiesto más e intentaría crear un objeto `kind: Kustomization` que la API
+# no conoce. Sin extensión, los dos caminos conviven: `-f` no lo ve y `-k` sí.
+#
+# Y no vale con dejarlo en `kustomize/` apuntando a `../k8s/*.yaml`: kustomize
+# prohíbe referenciar ficheros por encima de su propia raíz (falla con
+# «security; file ... is not in or below ...», y los symlinks tampoco cuelan,
+# porque los resuelve antes de comprobarlo). Referenciar un *directorio* de más
+# arriba sí se puede, pero solo si es una raíz de kustomize. Es decir: si
+# `kustomize/` tiene que leer de `k8s/`, este fichero va aquí a la fuerza.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - 00-namespaces.yaml
+  - 10-config.yaml
+  - 20-db.yaml
+  - 30-cache.yaml
+  - 40-api.yaml
+  - 50-web.yaml
+  - 60-agent.yaml
+  - 70-entrada.yaml
+  - 80-tareas.yaml
+  - 90-politicas.yaml
+  - 91-escalado.yaml

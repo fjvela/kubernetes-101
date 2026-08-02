@@ -1,0 +1,134 @@
+# api — el backend. La pieza que escala y la que se endurece.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: api-sa
+  namespace: tienda
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: tienda
+# api no habla con la API de Kubernetes: no necesita token montado.
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: tienda
+  labels:
+    app: api
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: tienda
+spec:
+  type: ClusterIP
+  selector:
+    app: api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: tienda
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: tienda
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+        app.kubernetes.io/name: api
+        app.kubernetes.io/part-of: tienda
+    spec:
+      serviceAccountName: api-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 30001
+        runAsGroup: 30001
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        # readOnlyRootFilesystem deja el disco en solo lectura. Todo lo que
+        # la aplicación necesite escribir tiene que tener su propio volumen.
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: api
+          image: tienda/api:2.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: DB_HOST
+              value: "db"
+            - name: CACHE_HOST
+              value: "cache"
+            - name: CACHE_PORT
+              value: "6379"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: password
+            # Sin esto la api usaba su valor por defecto, que coincide con el
+            # Secret de puro milagro: el día que cambie `database`, `reports`
+            # seguiría funcionando y la api leería otra base sin decir nada.
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: database
+          # Arranca lento a propósito: por eso hay startupProbe.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources: # requests != limits -> QoS Burstable
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"

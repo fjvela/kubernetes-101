@@ -1,0 +1,14 @@
+apiVersion: v2
+name: tienda
+description: La tienda del libro «Kubernetes 101», empaquetada como chart de Helm.
+type: application
+version: 1.0.0
+appVersion: "1.4.2"
+keywords:
+  - kubernetes-101
+  - ejemplo
+  - tienda
+home: https://www.javivela.dev/libros/kubernetes-101
+maintainers:
+  - name: Javier Vela Aylón
+    url: https://www.javivela.dev

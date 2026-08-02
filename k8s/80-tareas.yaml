@@ -1,0 +1,145 @@
+# Las piezas laterales: las tareas que empiezan y terminan, y el holgazán.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backups
+  namespace: tienda
+  labels:
+    app: backups
+    app.kubernetes.io/part-of: tienda
+spec:
+  backoffLimit: 4
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: backups
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: backups
+          image: postgres:16-alpine
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              pg_dump -h db -U "$POSTGRES_USER" -Fc "$POSTGRES_DB" \
+                > /backup/backup-$(date +%Y%m%d-%H%M).dump \
+              && echo "Backup completado con éxito"
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: username
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: database
+            - name: PGPASSWORD      # pg_dump lee esta variable, no POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: password
+          volumeMounts:
+            - name: backup
+              mountPath: /backup
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+      volumes:
+        - name: backup
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: reports
+  namespace: tienda
+  labels:
+    app: reports
+    app.kubernetes.io/part-of: tienda
+spec:
+  schedule: "0 3 * * *"
+  timeZone: "Europe/Madrid"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 300
+      template:
+        metadata:
+          labels:
+            app: reports
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 30001
+          containers:
+            - name: reports
+              image: tienda/reports:1.0.3
+              imagePullPolicy: IfNotPresent
+              args: ["--host", "db", "--salida", "/informes/ventas.csv"]
+              env:
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-credentials
+                      key: username
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-credentials
+                      key: password
+                - name: DB_NAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-credentials
+                      key: database
+              volumeMounts:
+                - name: informes
+                  mountPath: /informes
+          volumes:
+            - name: informes
+              emptyDir: {}
+---
+# holgazan: pide dos CPU y cuatro gigas, y no usa nada. Es la víctima del VPA.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: holgazan
+  namespace: tienda
+  labels:
+    app.kubernetes.io/name: holgazan
+    app.kubernetes.io/part-of: tienda
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: holgazan
+  template:
+    metadata:
+      labels:
+        app: holgazan
+        app.kubernetes.io/part-of: tienda
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 30001
+      containers:
+        - name: holgazan
+          image: tienda/holgazan:0.9.0
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"

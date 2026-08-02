@@ -1,0 +1,135 @@
+{{- if .Values.api.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: api-sa
+  labels:
+    app.kubernetes.io/name: api
+    {{- include "tienda.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  labels:
+    app: api
+    app.kubernetes.io/name: api
+    {{- include "tienda.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: api
+  ports:
+    - name: http
+      port: {{ .Values.api.service.port }}
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/name: api
+    {{- include "tienda.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+        app.kubernetes.io/name: api
+    spec:
+      serviceAccountName: api-sa
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 30001
+        runAsGroup: 30001
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: api
+          image: {{ include "tienda.imagen" (dict "registro" .Values.global.registro "prefijo" .Values.global.prefijo "repo" .Values.api.image.repository "tag" .Values.api.image.tag) }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: DB_HOST
+              value: db
+            - name: CACHE_HOST
+              value: cache
+            - name: CACHE_PORT
+              value: "6379"
+            - name: ARRANQUE_LENTO_SEGUNDOS
+              value: {{ .Values.api.arranqueLentoSegundos | quote }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef: { fieldPath: metadata.name }
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef: { fieldPath: spec.nodeName }
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: db-credentials, key: username }
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef: { name: db-credentials, key: password }
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef: { name: db-credentials, key: database }
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+          # Con readOnlyRootFilesystem el proceso no puede escribir en ningún
+          # sitio salvo donde le montes un volumen. Python usa /tmp, así que sin
+          # este emptyDir el contenedor arranca y falla al primer fichero temporal.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+{{- if .Values.api.hpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-hpa
+  labels:
+    {{- include "tienda.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: {{ .Values.api.hpa.minReplicas }}
+  maxReplicas: {{ .Values.api.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.api.hpa.cpuObjetivo }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+  labels:
+    app.kubernetes.io/name: web
+    {{- include "tienda.labels" . | nindent 4 }}
+data:
+  {{- toYaml .Values.web.config | nindent 2 }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+  labels:
+    {{- include "tienda.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  username: {{ .Values.db.credenciales.usuario | quote }}
+  password: {{ .Values.db.credenciales.password | quote }}
+  database: {{ .Values.db.credenciales.base | quote }}
