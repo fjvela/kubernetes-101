@@ -1,0 +1,48 @@
+# Dependabot vigila lo que se puede vigilar de este repositorio.
+#
+# Ojo con lo que NO cubre, que en un repositorio de Kubernetes es casi lo más
+# importante: las imágenes que se referencian dentro de los manifiestos
+# (`postgres:16-alpine` en k8s/20-db.yaml, `redis:7-alpine`, `fluent-bit:3.0`,
+# `curlimages/curl` en los ejemplos...) NO las mira nadie. Dependabot lee
+# Dockerfiles y ficheros de dependencias, no YAML de Kubernetes. Esas hay que
+# subirlas a mano, y por eso están todas en la tabla de «Las imágenes».
+version: 2
+updates:
+  # Las acciones de los workflows: checkout, setup-helm, kind-action, etc.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels: ["dependencias", "ci"]
+    commit-message:
+      prefix: "ci"
+    groups:
+      # Una sola PR al mes con todo lo de Actions, en vez de cinco.
+      acciones:
+        patterns: ["*"]
+
+  # Las imágenes base de las cuatro imágenes propias. `directories` en plural:
+  # son cuatro Dockerfiles y no hace falta repetir el bloque cuatro veces.
+  - package-ecosystem: docker
+    directories:
+      - /docker/api
+      - /docker/web
+      - /docker/reports
+      - /docker/holgazan
+    schedule:
+      interval: monthly
+    labels: ["dependencias", "imagenes"]
+    commit-message:
+      prefix: "docker"
+    groups:
+      imagenes-base:
+        patterns: ["*"]
+
+  # psycopg, la única dependencia de Python del repositorio.
+  - package-ecosystem: pip
+    directory: /docker/api
+    schedule:
+      interval: monthly
+    labels: ["dependencias"]
+    commit-message:
+      prefix: "python"
