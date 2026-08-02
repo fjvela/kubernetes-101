@@ -1,0 +1,83 @@
+# Comprueba que los manifiestos son válidos y que las tres formas de desplegar
+# —YAML plano, kustomize y Helm— siguen produciendo algo aplicable.
+# Son segundos: por eso está separado del workflow que levanta un kind de verdad.
+name: validar
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  K8S: "1.31.0"
+  # Sin esto, kubeconform se SALTA los objetos de k8s/opcional/ (Gateway API y
+  # el VPA) en vez de validarlos: son CRD, y sus esquemas no van en el core.
+  CRDS: https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
+
+jobs:
+  manifiestos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Herramientas
+        run: |
+          curl -sSfL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | sudo tar -xz -C /usr/local/bin kubeconform
+          curl -sSfL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz \
+            | sudo tar -xz -C /usr/local/bin kustomize
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
+      - name: YAML plano
+        run: |
+          kubeconform -summary -strict -kubernetes-version "$K8S" \
+            -schema-location default -schema-location "$CRDS" k8s/
+
+      - name: kustomize — los tres roots
+        run: |
+          for raiz in k8s kustomize/overlays/dev kustomize/overlays/prod; do
+            echo "==> $raiz"
+            kustomize build "$raiz" | kubeconform -summary -strict \
+              -kubernetes-version "$K8S" \
+              -schema-location default -schema-location "$CRDS"
+          done
+
+      - name: Helm
+        run: |
+          helm lint ./helm/tienda
+          echo "==> valores por defecto"
+          helm template tienda ./helm/tienda -n tienda \
+            | kubeconform -summary -strict -kubernetes-version "$K8S" \
+                -schema-location default -schema-location "$CRDS"
+          echo "==> con lo que viene apagado, encendido"
+          helm template tienda ./helm/tienda -n tienda \
+            --set ingress.enabled=true \
+            --set global.registro=ghcr.io/${{ github.repository_owner }} \
+            --set global.prefijo=tienda- \
+            | kubeconform -summary -strict -kubernetes-version "$K8S" \
+                -schema-location default -schema-location "$CRDS"
+
+  script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck docker/build.sh
+
+  bash32:
+    # El bash que trae macOS de serie sigue siendo el 3.2, y ahí va a estar
+    # buena parte de los lectores. Con un motor de mentira en el PATH se puede
+    # ejecutar el script entero sin necesidad de docker ni de podman.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build.sh con el bash 3.2 de macOS
+        run: |
+          /bin/bash --version | head -1
+          mkdir -p /tmp/stub
+          printf '#!/bin/sh\n[ "$1" = info ] && exit 0\necho "[motor] $*"\n' > /tmp/stub/podman
+          chmod +x /tmp/stub/podman
+          PATH="/tmp/stub:$PATH" MOTOR=podman /bin/bash docker/build.sh

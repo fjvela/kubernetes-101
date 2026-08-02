@@ -84,14 +84,7 @@ curl http://localhost:8080/api/productos
 
 ```bash
 # 1. Un clúster de tres nodos, como el mapa del libro
-cat <<EOF | kind create cluster --name tienda --config -
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-  - role: control-plane
-  - role: worker
-  - role: worker
-EOF
+kind create cluster --name tienda --config kind.yaml
 
 # 2. Construir las imágenes y meterlas dentro del clúster: kind no ve el motor
 #    de contenedores de tu máquina, hay que pasarle las imágenes a mano.

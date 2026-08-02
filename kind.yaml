@@ -1,0 +1,13 @@
+# El clúster del libro: un control plane y dos workers.
+#
+#   kind create cluster --name tienda --config kind.yaml
+#
+# Vive en un fichero y no dentro del README porque lo usan los dos: el lector
+# y el workflow de .github/workflows/desplegar.yaml. Un clúster de mentira que
+# se despliega distinto al de verdad no comprueba nada.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+  - role: worker
+  - role: worker

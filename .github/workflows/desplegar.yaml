@@ -1,0 +1,89 @@
+# Levanta un kind de verdad y despliega la tienda por los dos caminos.
+# Es el único sitio donde se comprueba lo que el README promete: que esto
+# arranca. Un manifiesto puede ser válido y no levantar; eso solo se ve aquí.
+name: desplegar
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md"]
+  pull_request:
+    paths-ignore: ["**.md"]
+  workflow_dispatch:
+
+jobs:
+  yaml-plano:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: tienda
+          config: kind.yaml
+
+      - name: Construir las imágenes y meterlas en el clúster
+        run: ./docker/build.sh --kind
+
+      - run: kubectl apply -f k8s/
+
+      - name: Esperar a que esté en pie
+        run: |
+          kubectl -n tienda rollout status statefulset/db --timeout=180s
+          kubectl -n tienda rollout status deploy/api --timeout=180s
+          kubectl -n tienda rollout status deploy/web --timeout=180s
+          kubectl -n tienda rollout status deploy/cache --timeout=180s
+          kubectl -n tienda wait --for=condition=complete job/backups --timeout=180s
+
+      - name: Las rutas de la api, incluida la que devolvía 404
+        run: |
+          for ruta in / /api /api/ /api/productos /api/visitas /healthz /readyz /metrics; do
+            echo "==> $ruta"
+            kubectl -n tienda run "curl-$RANDOM" --rm -i --restart=Never --quiet \
+              --image=curlimages/curl:8.10.1 -- -sf "http://api:8080$ruta" > /dev/null
+          done
+
+      - name: Y que web hace de proxy hacia la api
+        run: |
+          kubectl -n tienda run curl-web --rm -i --restart=Never --quiet \
+            --image=curlimages/curl:8.10.1 -- -sf http://web/api/productos > /dev/null
+
+      - name: Qué ha pasado, si algo ha fallado
+        if: failure()
+        run: |
+          kubectl get all,pvc -A
+          kubectl -n tienda describe pods
+          kubectl -n tienda logs -l app=api --tail=100 || true
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: tienda
+          config: kind.yaml
+
+      - run: ./docker/build.sh --kind
+
+      - name: El camino que documenta el README
+        run: |
+          helm install tienda ./helm/tienda -n tienda --create-namespace \
+            --wait --timeout 5m
+          kubectl -n tienda run curl --rm -i --restart=Never --quiet \
+            --image=curlimages/curl:8.10.1 -- -sf http://api:8080/api/productos > /dev/null
+
+      - name: Y el camino con los Namespaces creados a mano
+        run: |
+          helm uninstall tienda -n tienda
+          kubectl delete ns tienda plataforma --ignore-not-found --wait
+          kubectl apply -f k8s/00-namespaces.yaml
+          helm install tienda ./helm/tienda -n tienda \
+            --set crearNamespacePlataforma=false --wait --timeout 5m
+
+      - name: Qué ha pasado, si algo ha fallado
+        if: failure()
+        run: |
+          kubectl get all -A
+          kubectl -n tienda describe pods
