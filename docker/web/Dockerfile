@@ -2,7 +2,7 @@
 #
 # Se parte de nginx-unprivileged porque escucha en el 8080 y corre como usuario
 # sin privilegios: es lo que exige el securityContext del capítulo de Seguridad.
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 
 # En templates/, no en conf.d/: el entrypoint de la imagen pasa envsubst a todo
 # lo que hay aquí y escribe el resultado en conf.d/. Es lo que hace que el

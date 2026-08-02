@@ -1,5 +1,5 @@
 # api — backend de la tienda
-FROM python:3.12-alpine
+FROM python:3.14-alpine
 
 # Usuario sin privilegios: el securityContext del libro exige runAsNonRoot,
 # y el kubelet necesita un UID numérico para poder comprobarlo.
