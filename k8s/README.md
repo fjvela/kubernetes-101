@@ -21,7 +21,7 @@ Los ficheros van numerados porque el orden importa:
 | `80-tareas.yaml` | `backups`, `reports` y el `holgazan` |
 | `90-politicas.yaml` | ResourceQuota, LimitRange y NetworkPolicies |
 | `91-escalado.yaml` | el HPA de `api` |
-| `opcional/` | Gateway API y VPA, que necesitan controladores aparte |
+| `opcional/` | Gateway API, VPA y el `recomendador`, que necesitan algo que el clúster no trae |
 
 ## Aplicar
 
@@ -37,6 +37,12 @@ kubectl apply -k k8s/            # o de una vez, con kustomize
 - **metrics-server** para `91-escalado.yaml` (si no, el HPA se queda en `<unknown>`).
 - Las **CRD de Gateway API** y un controlador para `opcional/gateway.yaml`.
 - El **controlador de VPA** para `opcional/vpa.yaml`.
+- Una **`DeviceClass` y un driver DRA** para `opcional/recomendador.yaml`. Sin
+  ellos se aplica igual y se queda en `Pending`, que es el ejercicio: el fichero
+  lleva comentados los tres escalones para ver cambiar el mensaje del scheduler.
+  Eso sí, necesita un clúster **1.34 o posterior**, que es cuando
+  `resource.k8s.io` entra en el núcleo de la API; con un `kind` más antiguo el
+  apply falla con «no matches for kind ResourceClaimTemplate».
 
 Todo lo demás funciona en un kind recién creado.
 
@@ -47,5 +53,6 @@ libro y no existen en ningún registro público. Tienes dos caminos:
 
 1. Construirlas y cargarlas en kind (ver el README principal). Como llevan
    `imagePullPolicy: IfNotPresent`, el kubelet las encuentra sin salir a Internet.
-2. Usar `kustomize/overlays/prod`, que reescribe los nombres para apuntar a
-   `ghcr.io`.
+2. No construir nada: `kubectl apply -k kustomize/overlays/ghcr` es este mismo
+   directorio con los nombres cambiados por los de las imágenes publicadas en
+   `ghcr.io/fjvela`, con los mismos tags.

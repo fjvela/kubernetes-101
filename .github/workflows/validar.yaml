@@ -10,7 +10,12 @@ on:
   workflow_dispatch:
 
 env:
-  K8S: "1.31.0"
+  # El suelo lo pone `opcional/recomendador.yaml`: `resource.k8s.io/v1` no entra
+  # en el núcleo hasta 1.34, y con 1.31 kubeconform no encontraría esquema para
+  # el ResourceClaimTemplate y fallaría. No se sube a 1.37 —la versión de
+  # referencia del libro— porque yannh/kubernetes-json-schema todavía no la
+  # publica. 1.36 es además donde está comprobado el comportamiento de DRA.
+  K8S: "1.36.0"
   # Sin esto, kubeconform se SALTA los objetos de k8s/opcional/ (Gateway API y
   # el VPA) en vez de validarlos: son CRD, y sus esquemas no van en el core.
   CRDS: https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
@@ -37,9 +42,9 @@ jobs:
           kubeconform -summary -strict -kubernetes-version "$K8S" \
             -schema-location default -schema-location "$CRDS" k8s/
 
-      - name: kustomize — los tres roots
+      - name: kustomize — los cuatro roots
         run: |
-          for raiz in k8s kustomize/overlays/dev kustomize/overlays/prod; do
+          for raiz in k8s kustomize/overlays/dev kustomize/overlays/prod kustomize/overlays/ghcr; do
             echo "==> $raiz"
             kustomize build "$raiz" | kubeconform -summary -strict \
               -kubernetes-version "$K8S" \

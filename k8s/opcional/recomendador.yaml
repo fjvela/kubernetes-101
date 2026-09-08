@@ -1,0 +1,161 @@
+# recomendador — la única pieza que pide hardware. Existe para explicar DRA.
+#
+# Está aquí y no en `k8s/` por lo mismo que el Gateway y el VPA: necesita algo
+# que el clúster no trae de serie. Pero «no lo trae» no significa «no se puede
+# aplicar»: el grupo `resource.k8s.io` es núcleo de la API desde 1.34, así que
+# esto se aplica en un kind recién creado sin activar ningún feature gate.
+#
+# Lo que falta es el dispositivo, y se nota en tres escalones. Aplica esto y
+# mira cómo cambia el mensaje del scheduler según lo que vayas añadiendo:
+#
+#   1. Tal cual, sin nada más:
+#        kubectl apply -f k8s/opcional/recomendador.yaml
+#        kubectl describe pod -n tienda -l app=recomendador
+#      -> «device class gpu-inferencia does not exist»
+#      El Pod se queda en Pending, y el `ResourceClaim` ya existe: uno por Pod,
+#      generado a partir de la plantilla. `kubectl get resourceclaim -n tienda`.
+#
+#   2. Creando la DeviceClass, que es cosa del administrador del clúster:
+#        kubectl apply -f - <<'EOF'
+#        apiVersion: resource.k8s.io/v1
+#        kind: DeviceClass
+#        metadata:
+#          name: gpu-inferencia
+#        spec:
+#          selectors:
+#            - cel:
+#                expression: device.driver == "gpu.example.com"
+#        EOF
+#      -> «cannot allocate all claims»
+#      Otra pieza ausente, otro mensaje. Ahora la clase existe, pero nadie ha
+#      publicado ningún dispositivo.
+#
+#   3. Publicando a mano un ResourceSlice de mentira, que es lo que haría el
+#      driver del fabricante. Cambia `nodeName` por un nodo tuyo:
+#        kubectl apply -f - <<'EOF'
+#        apiVersion: resource.k8s.io/v1
+#        kind: ResourceSlice
+#        metadata:
+#          name: nodo-simulado-gpu
+#        spec:
+#          driver: gpu.example.com
+#          nodeName: kind-worker
+#          pool:
+#            name: kind-worker
+#            generation: 1
+#            resourceSliceCount: 1
+#          devices:
+#            - name: gpu-0
+#              capacity:
+#                memory:
+#                  value: 24Gi
+#            - name: gpu-1
+#              capacity:
+#                memory:
+#                  value: 8Gi
+#        EOF
+#      -> el ResourceClaim pasa a `allocated,reserved` y el Pod se programa.
+#      Comprueba qué dispositivo eligió:
+#        kubectl get resourceclaim -n tienda \
+#          -o jsonpath='{.items[0].status.allocation.devices.results}'
+#      Sale `gpu-0`: el selector CEL de abajo descartó la de 8 GiB. Es el
+#      dibujo del capítulo de Scheduling, ejecutándose.
+#      El Pod no llega a arrancar —«DRA driver gpu.example.com is not
+#      registered»— porque un ResourceSlice a mano describe un dispositivo,
+#      pero no hay plugin en el kubelet que sepa entregarlo. Ahí termina lo que
+#      se puede simular sin hardware.
+#
+# Para llegar hasta el final hace falta un driver de verdad:
+#   https://github.com/kubernetes-sigs/dra-example-driver   (sin hardware real)
+#   https://github.com/NVIDIA/k8s-dra-driver-gpu            (con GPUs NVIDIA)
+#
+# Limpieza:
+#   kubectl delete -f k8s/opcional/recomendador.yaml
+#   kubectl delete deviceclass gpu-inferencia
+#   kubectl delete resourceslice nodo-simulado-gpu
+#
+# La imagen `tienda/recomendador:1.0.0` es la del libro y no existe en ningún
+# registro: da igual, porque el kubelet ni llega a pedirla.
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: gpu-24gb
+  namespace: tienda
+  labels:
+    app.kubernetes.io/name: recomendador
+    app.kubernetes.io/part-of: tienda
+spec:
+  # Plantilla y no ResourceClaim a secas: así Kubernetes genera una reclamación
+  # por Pod. Un ResourceClaim es un objeto único, y las réplicas se lo
+  # repartirían, que casi nunca es lo que quieres con un dispositivo.
+  spec:
+    devices:
+      requests:
+        - name: gpu
+          exactly:
+            deviceClassName: gpu-inferencia
+            allocationMode: ExactCount
+            count: 1
+            selectors:
+              - cel:
+                  expression: |-
+                    device.capacity["gpu.example.com"].memory
+                      .compareTo(quantity("24Gi")) >= 0
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recomendador
+  namespace: tienda
+  labels:
+    app.kubernetes.io/name: recomendador
+    app.kubernetes.io/part-of: tienda
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: recomendador
+  template:
+    metadata:
+      labels:
+        app: recomendador
+        app.kubernetes.io/name: recomendador
+        app.kubernetes.io/part-of: tienda
+    spec:
+      # El Namespace `tienda` va con enforce: baseline y warn: restricted, así
+      # que esta pieza se endurece igual que el resto aunque nunca arranque.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 30001
+        runAsGroup: 30001
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      resourceClaims:
+        - name: gpu
+          resourceClaimTemplateName: gpu-24gb
+      containers:
+        - name: recomendador
+          image: tienda/recomendador:1.0.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources: # requests == limits -> QoS Guaranteed
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+            # Los dispositivos no se piden con requests: se reclaman. Esto solo
+            # engancha el contenedor con la reclamación declarada arriba.
+            claims:
+              - name: gpu

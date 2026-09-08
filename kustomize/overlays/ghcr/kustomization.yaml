@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Las imágenes publicadas: el sistema del libro tal cual, sin construir nada.
+#
+# Es el mismo `k8s/` que aplica el libro, con un único cambio: las cuatro
+# imágenes propias apuntan a las que .github/workflows/imagenes.yaml publica
+# en ghcr.io/fjvela. No hace falta docker, ni podman, ni `build.sh --kind`:
+# el kubelet las descarga como descarga postgres o redis.
+#
+#   kubectl apply -k kustomize/overlays/ghcr
+#
+# Los tags son los del libro, no `latest`: con `latest` nunca sabes qué está
+# corriendo, y eso es media lección del capítulo de Workloads.
+resources:
+  - ../../base
+
+images:
+  - name: tienda/web
+    newName: ghcr.io/fjvela/tienda-web
+    newTag: 1.4.2
+  - name: tienda/api
+    newName: ghcr.io/fjvela/tienda-api
+    newTag: 2.1.0
+  - name: tienda/reports
+    newName: ghcr.io/fjvela/tienda-reports
+    newTag: 1.0.3
+  - name: tienda/holgazan
+    newName: ghcr.io/fjvela/tienda-holgazan
+    newTag: 0.9.0

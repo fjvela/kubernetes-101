@@ -30,11 +30,19 @@ agente de logs por nodo, tareas programadas, políticas de red y escalado.
 | `reports` | El informe de ventas, cada noche a las 03:00. | CronJob | `tienda` |
 | `holgazan` | Pide 2 CPU y 4 GiB, y no usa nada. | Deployment ×1 | `tienda` |
 | `gateway` | La puerta de entrada del tráfico. | Ingress (o Gateway) | `tienda` / `plataforma` |
+| `recomendador` | La única que pide hardware: reclama una GPU con DRA. | Deployment ×1 | `tienda` |
 
-Son nueve de las diez piezas del libro (por eso la `ResourceQuota` de aquí suma 4,2 CPU y la del libro 4,7: son los 500m del `recomendador`). Falta el `recomendador`, que pide una
-GPU con Dynamic Resource Allocation: necesita hardware y un driver DRA
-instalado, así que no tiene sentido dejarlo en un repositorio pensado para
-arrancar en un portátil. Está en el Apéndice B del libro.
+Están las diez piezas del libro. El `recomendador` vive en
+[`k8s/opcional/`](k8s/opcional/recomendador.yaml) por lo mismo que el Gateway y
+el VPA: necesita algo que el clúster no trae. Pero se aplica sin instalar nada
+—el grupo `resource.k8s.io` es núcleo de la API desde 1.34— y quedarse en
+`Pending` es justo el ejercicio: el `ResourceClaim` nace, y el scheduler dice
+qué falta. El fichero lleva los tres escalones comentados, hasta simular un
+dispositivo a mano y ver al selector CEL descartar la GPU que no llega.
+
+Como no se aplica con `kubectl apply -f k8s/`, la `ResourceQuota` de este
+repositorio suma 4,2 CPU y la del libro 4,7: la diferencia son los 500m del
+`recomendador`.
 
 El `agent` vive en `plataforma` y no en `tienda` por un motivo concreto: monta
 `/var/log` del nodo con un `hostPath`, y eso lo prohíbe el nivel `baseline` de
@@ -48,7 +56,7 @@ detalle que solo aparece cuando intentas desplegar de verdad lo que has escrito.
 ```
 docker/       Cómo se construyen las cuatro imágenes propias
 k8s/          Los manifiestos del libro, adaptados para arrancar en kind
-kustomize/    Los mismos manifiestos, con overlays de dev y prod
+kustomize/    Los mismos manifiestos, con overlays de dev, prod y ghcr
 helm/         Los mismos manifiestos, empaquetados como chart
 ```
 
@@ -99,6 +107,22 @@ kubectl port-forward -n tienda svc/web 8080:80
 # y abre http://localhost:8080
 ```
 
+### Sin construir nada: las imágenes ya publicadas
+
+Las cuatro imágenes propias están publicadas en `ghcr.io/fjvela`, con los tags
+del libro. Si no quieres docker ni podman por medio, el paso 2 sobra: el
+overlay `ghcr` es el mismo `k8s/` con los nombres de las imágenes cambiados, y
+el kubelet las descarga como descarga `postgres` o `redis`.
+
+```bash
+kind create cluster --name tienda --config kind.yaml
+kubectl apply -k kustomize/overlays/ghcr
+```
+
+Es la forma más rápida de tener la tienda en pie. Lo que pierdes es poder
+tocar el código de `docker/` y ver el cambio en el clúster: para eso hace
+falta construir.
+
 ### Con podman en vez de docker
 
 `docker/build.sh` funciona con los dos: si no encuentra docker usa podman, y
@@ -126,12 +150,15 @@ es un envoltorio, no una implementación propia.
 ### Con kustomize
 
 ```bash
-kustomize build kustomize/overlays/dev  | kubectl apply -f -
-kustomize build kustomize/overlays/prod | kubectl apply -f -
+kubectl apply -k kustomize/overlays/dev    # 1 réplica de todo, para un portátil
+kubectl apply -k kustomize/overlays/ghcr   # k8s/ tal cual, con las imágenes publicadas
+kubectl apply -k kustomize/overlays/prod   # 3+2+3 réplicas, reparto estricto, tu registro
 ```
 
-Antes de usar `prod`, cambia `TU-USUARIO` en
-`kustomize/overlays/prod/kustomization.yaml` por tu usuario de GitHub.
+`dev` y `prod` usan los nombres del libro y esperan las imágenes que construye
+`./docker/build.sh --kind`; `ghcr` no necesita construir nada. Antes de usar
+`prod`, cambia `TU-USUARIO` en `kustomize/overlays/prod/kustomization.yaml` por
+tu usuario de GitHub.
 
 ### Con Helm
 
@@ -205,7 +232,8 @@ aprende, pero conviene tenerlas escritas para que no parezcan erratas.
 | `NetworkPolicy` de la `cache` | No existe | `cache-solo-desde-api` | El libro cierra solo la `db` para no repetir el mismo ejemplo dos veces; aquí sale gratis y deja el sistema mejor cerrado. |
 | Service `web` | `type: LoadBalancer` | `type: ClusterIP` | En `kind` no hay balanceador que asignar: el Service se quedaría con la IP externa en `<pending>` para siempre. Se llega desde fuera por el Ingress o con `port-forward`. |
 | `LimitRange` de PVC | Segunda entrada `type: PersistentVolumeClaim` (entre 1Gi y 100Gi) | No existe | El disco de la `db` aquí son 5 GiB de la clase por defecto, y una sola entrada de tipo `Container` basta para lo que enseña el capítulo. |
-| Cuota de `ResourceClaim` | `count/resourceclaims.resource.k8s.io: "2"` | Sin esa entrada | Va con el `recomendador`, que no está aquí. Sin DRA no hay ResourceClaims que contar. |
+| Cuota de `ResourceClaim` | `count/resourceclaims.resource.k8s.io: "2"` | Sin esa entrada | La cuota se aplica siempre y el `recomendador` no: vive en `k8s/opcional/`. Y una entrada `count/` de un recurso que un clúster anterior a 1.34 no sirve rompería el apply de todo lo demás. |
+| Imagen del `recomendador` | `tienda/recomendador:1.0.0` | La misma | Es la única imagen del repositorio que no se construye ni existe en un registro. Da igual: el Pod se queda en `Pending` y el kubelet nunca llega a pedirla. |
 | `PriorityClass` | Tres clases (`tienda-critica`, `tienda-normal`, `tienda-relleno`) y el `globalDefault` | No existen | Son objetos de ámbito de clúster, no de Namespace: crearlos desde este repositorio contaminaría el clúster del lector fuera de `tienda`. El capítulo de Scheduling los explica y se aplican a mano. |
 | Nombre del PDB | Dos alternativas, `web-pdb-min` y `web-pdb-max`, para comparar `minAvailable` con `maxUnavailable` | Uno solo, `web-pdb`, con `minAvailable: 2` | Los dos objetos del libro son excluyentes: sirven para comparar, no para aplicar a la vez. |
 | Ingress en el chart | — | `ingress.enabled: false` por defecto | En `k8s/` el Ingress se crea siempre; en Helm hay que pedirlo con `--set ingress.enabled=true`, porque un chart que crea un Ingress sin controlador instalado deja un objeto que no sirve para nada. |
@@ -297,8 +325,10 @@ imagen oficial de nginx, que quiere el puerto 80 y arranca como root, ese
 manifiesto no llega a levantar.
 
 El workflow de `.github/workflows/imagenes.yaml` las publica en
-`ghcr.io/TU-USUARIO/tienda-*` en cada push a `main`. No necesita secretos:
-le basta con el `GITHUB_TOKEN` que GitHub inyecta solo.
+`ghcr.io/TU-USUARIO/tienda-*` cada vez que cambia algo en `docker/` en `main`.
+No necesita secretos: le basta con el `GITHUB_TOKEN` que GitHub inyecta solo.
+Las de este repositorio están en `ghcr.io/fjvela/tienda-*`, son públicas, y son
+las que usa `kustomize/overlays/ghcr`.
 
 **Un solo criterio de nombres, en los cuatro sitios.** Sin registro, valen los
 nombres del libro (`tienda/web:1.4.2`). Con un registro real, las imágenes
@@ -310,6 +340,7 @@ y `ghcr.io/tuusuario/web` sería un nombre demasiado genérico:
 | `docker/build.sh` | `REGISTRO=ghcr.io/TU-USUARIO ./build.sh --push` | `ghcr.io/TU-USUARIO/tienda-web:1.4.2` |
 | GitHub Actions | automático en cada push a `main` | `ghcr.io/TU-USUARIO/tienda-web:1.4.2` |
 | `kustomize/overlays/prod` | `newName` en el `kustomization.yaml` | `ghcr.io/TU-USUARIO/tienda-web:1.4.2` |
+| `kustomize/overlays/ghcr` | nada: ya apunta a las publicadas | `ghcr.io/fjvela/tienda-web:1.4.2` |
 | Helm | `--set global.registro=... --set global.prefijo=tienda-` | `ghcr.io/TU-USUARIO/tienda-web:1.4.2` |
 
 ---

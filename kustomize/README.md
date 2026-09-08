@@ -2,13 +2,18 @@
 
 Aquí no hay ni un manifiesto nuevo. `base/` apunta a `../../k8s`, y los overlays
 solo declaran las diferencias. Si añades una pieza en `k8s/`, aparece sola en
-los dos entornos.
+los tres.
 
 ```
 base/                  referencia a k8s/, más labels comunes
 overlays/dev/          1 réplica de todo, holgazán a dieta, arranque instantáneo
-overlays/prod/         3+2+3 réplicas, imágenes en ghcr.io, reparto estricto
+overlays/prod/         3+2+3 réplicas, imágenes en tu registro, reparto estricto
+overlays/ghcr/         k8s/ tal cual, con las imágenes ya publicadas en ghcr.io/fjvela
 ```
+
+`ghcr` es el que no cambia nada del sistema: solo el nombre de las cuatro
+imágenes propias, para que el clúster las descargue en vez de esperar a que las
+construyas. Es el camino sin docker ni podman.
 
 ## Ver qué sale antes de aplicarlo
 
@@ -22,6 +27,7 @@ kustomize build overlays/prod | grep -E "image:|replicas:"
 ```bash
 kubectl apply -k overlays/dev
 kubectl apply -k overlays/prod
+kubectl apply -k overlays/ghcr
 ```
 
 ## Las tres diferencias entre dev y prod

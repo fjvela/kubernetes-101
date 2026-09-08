@@ -1,4 +1,4 @@
-# Levanta un kind de verdad y despliega la tienda por los dos caminos.
+# Levanta un kind de verdad y despliega la tienda por los tres caminos.
 # Es el único sitio donde se comprueba lo que el README promete: que esto
 # arranca. Un manifiesto puede ser válido y no levantar; eso solo se ve aquí.
 name: desplegar
@@ -48,12 +48,75 @@ jobs:
           kubectl -n tienda run curl-web --rm -i --restart=Never --quiet \
             --image=curlimages/curl:8.10.1 -- -sf http://web/api/productos > /dev/null
 
+      # El recomendador no entra con `apply -f k8s/`: vive en opcional/. Lo que
+      # se comprueba aquí es la afirmación del libro, que es fácil de dar por
+      # buena y difícil de notar si deja de serlo: sin DeviceClass ni driver el
+      # manifiesto se aplica igual, nace un ResourceClaim por Pod y el Pod se
+      # queda en Pending. Si algún día kind cambia eso, que avise el CI y no un
+      # lector.
+      - name: El recomendador se aplica y se queda en Pending
+        run: |
+          MENOR=$(kubectl version -o json | python3 -c 'import json,sys; print(json.load(sys.stdin)["serverVersion"]["minor"].strip("+"))')
+          if [ "${MENOR}" -lt 34 ]; then
+            echo "::notice::Servidor 1.${MENOR}: resource.k8s.io no es núcleo hasta 1.34. Se salta."
+            exit 0
+          fi
+
+          kubectl apply -f k8s/opcional/recomendador.yaml
+
+          for i in $(seq 30); do
+            CLAIMS=$(kubectl -n tienda get resourceclaim --no-headers 2>/dev/null | wc -l)
+            [ "${CLAIMS}" -ge 1 ] && break
+            sleep 2
+          done
+
+          DUENO=$(kubectl -n tienda get resourceclaim -o jsonpath='{.items[0].metadata.ownerReferences[0].kind}')
+          test "${DUENO}" = "Pod" || { echo "El ResourceClaim no pertenece a un Pod: '${DUENO}'"; exit 1; }
+
+          FASE=$(kubectl -n tienda get pods -l app=recomendador -o jsonpath='{.items[0].status.phase}')
+          test "${FASE}" = "Pending" || { echo "El recomendador debería estar en Pending, y está en '${FASE}'"; exit 1; }
+
+          kubectl -n tienda describe pod -l app=recomendador | grep -q "device class gpu-inferencia does not exist" \
+            || { echo "El scheduler ya no dice que falte la DeviceClass:"; kubectl -n tienda describe pod -l app=recomendador | tail -5; exit 1; }
+
+          kubectl delete -f k8s/opcional/recomendador.yaml
+
       - name: Qué ha pasado, si algo ha fallado
         if: failure()
         run: |
           kubectl get all,pvc -A
           kubectl -n tienda describe pods
           kubectl -n tienda logs -l app=api --tail=100 || true
+
+  # El camino sin construir: las imágenes publicadas en ghcr.io. Lo que se
+  # comprueba es que el overlay sigue apuntando a imágenes que existen y que
+  # el README no promete un atajo que ya no funciona.
+  imagenes-publicadas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: tienda
+          config: kind.yaml
+
+      - run: kubectl apply -k kustomize/overlays/ghcr
+
+      - name: Esperar a que esté en pie
+        run: |
+          kubectl -n tienda rollout status statefulset/db --timeout=180s
+          kubectl -n tienda rollout status deploy/api --timeout=180s
+          kubectl -n tienda rollout status deploy/web --timeout=180s
+          kubectl -n tienda wait --for=condition=complete job/backups --timeout=180s
+          kubectl -n tienda run curl --rm -i --restart=Never --quiet \
+            --image=curlimages/curl:8.10.1 -- -sf http://web/api/productos > /dev/null
+
+      - name: Qué ha pasado, si algo ha fallado
+        if: failure()
+        run: |
+          kubectl get all,pvc -A
+          kubectl -n tienda describe pods
 
   helm:
     runs-on: ubuntu-latest
