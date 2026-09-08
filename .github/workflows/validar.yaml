@@ -24,7 +24,7 @@ jobs:
   manifiestos:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Herramientas
         run: |
@@ -33,7 +33,7 @@ jobs:
           curl -sSfL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz \
             | sudo tar -xz -C /usr/local/bin kustomize
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         with:
           version: v3.16.3
 
@@ -69,7 +69,7 @@ jobs:
   script:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: shellcheck docker/build.sh
 
   bash32:
@@ -78,7 +78,7 @@ jobs:
     # ejecutar el script entero sin necesidad de docker ni de podman.
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: build.sh con el bash 3.2 de macOS
         run: |
           /bin/bash --version | head -1
